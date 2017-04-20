@@ -44,7 +44,6 @@ from .serializers import (
     SuperMasterSerializer,
     TsigKeysTemplateSerializer,
 )
-from powerdns.models import Service
 from powerdns.utils import reverse_pointer
 
 
