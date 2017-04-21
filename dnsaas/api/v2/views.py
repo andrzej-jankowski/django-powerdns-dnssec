@@ -394,6 +394,9 @@ class IPRecordView(APIView):
 
     def _add_record(self, data):
         new = data['new']
+        domain = hostname2domain(new['hostname'])
+        if not domain:
+            return status.HTTP_400_BAD_REQUEST, 'Domain not found'
         service = None
         if data.get('service_uid'):
             service = Service.get_service_by_uid(data['service_uid'])
@@ -401,7 +404,7 @@ class IPRecordView(APIView):
             Record.objects.create(
                 type='A',
                 name=new['hostname'],
-                domain=hostname2domain(new['hostname']),
+                domain=domain,
                 number=int(ipaddress.ip_address(new['address'])),
                 content=new['address'],
                 service=service
@@ -422,9 +425,12 @@ class IPRecordView(APIView):
             return self._delete_record(dict(
                 address=old['address'], hostname=old['hostname']
             ))
+        domain = hostname2domain(new['hostname'])
+        if not domain:
+            return status.HTTP_400_BAD_REQUEST, 'Domain not found'
         if record:
             record.name = new['hostname']
-            record.domain = hostname2domain(new['hostname'])
+            record.domain = domain
             record.content = new['address']
             record.save()
             # If change hostname update name records txt.
