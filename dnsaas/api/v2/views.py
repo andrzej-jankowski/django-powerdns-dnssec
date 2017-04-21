@@ -404,9 +404,7 @@ class IPRecordView(APIView):
                 domain=hostname2domain(new['hostname']),
                 number=int(ipaddress.ip_address(new['address'])),
                 content=new['address'],
-                **{
-                    'service': service
-                } if service else {}
+                service=service
             )
         except IntegrityError as e:
             return status.HTTP_409_CONFLICT, str(e)
