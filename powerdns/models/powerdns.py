@@ -11,6 +11,7 @@ from django.conf import settings
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.db.models import Q
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils.translation import ugettext_lazy as _
@@ -585,32 +586,48 @@ class Record(
         """
         if self.type not in IP_TYPES_FOR_PTR:
             raise ValueError(_('Creating PTR only for A or AAAA records'))
-        number, domain_name = to_reverse(self.content)
-        if self.domain.auto_ptr == AutoPtrOptions.ALWAYS:
-            domain, created = Domain.objects.get_or_create(
-                name=domain_name,
-                defaults={
-                    'template': (
-                        self.domain.reverse_template or
-                        get_default_reverse_domain()
-                    ),
-                    'type': self.domain.type,
-                }
+
+        number, base_domain_name = to_reverse(self.content)
+
+        q_filters = Q(name__exact=base_domain_name)
+
+        chunks = base_domain_name.split('.')[1:-2]
+        suffix = '.'.join(base_domain_name.split('.')[-2:])
+
+        for i, chunk in enumerate(chunks):
+            dn = '{content}.{suffix}'.format(
+                content='.'.join(chunks[i:]),
+                suffix=suffix
             )
-        elif self.domain.auto_ptr == AutoPtrOptions.ONLY_IF_DOMAIN:
-            try:
-                domain = Domain.objects.get(name=domain_name)
-            except Domain.DoesNotExist:
+            q_filters |= Q(name__exact=dn)
+
+        matching_domains = Domain.objects.filter(q_filters)
+        matching_domains = sorted(
+            matching_domains, key=lambda domain: len(domain.name), reverse=True
+        )
+        if not matching_domains:
+            if self.domain.auto_ptr == AutoPtrOptions.ALWAYS:
+                domain, created = Domain.objects.get_or_create(
+                    name=base_domain_name,
+                    defaults={
+                        'template': (
+                            self.domain.reverse_template or
+                            get_default_reverse_domain()
+                        ),
+                        'type': self.domain.type
+                    }
+                )
+            else:
                 return
         else:
-            return
+            domain = matching_domains[0]
 
         self.delete_ptr()
         Record.objects.create(
             type='PTR',
             domain=domain,
             service=self.service,
-            name='.'.join([number, domain_name]),
+            name='.'.join([number, base_domain_name]),
             content=self.name,
             depends_on=self,
             owner=self.owner,
