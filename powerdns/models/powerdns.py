@@ -11,7 +11,6 @@ from django.conf import settings
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import Q
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils.translation import ugettext_lazy as _
@@ -21,6 +20,7 @@ from threadlocals.threadlocals import get_current_user
 from .ownership import OwnershipByService, OwnershipType
 from ..utils import (
     AutoPtrOptions,
+    get_matching_domains,
     is_authorised,
     is_owner,
     no_object,
@@ -588,23 +588,8 @@ class Record(
             raise ValueError(_('Creating PTR only for A or AAAA records'))
 
         number, base_domain_name = to_reverse(self.content)
+        matching_domains = get_matching_domains(base_domain_name)
 
-        q_filters = Q(name__exact=base_domain_name)
-
-        chunks = base_domain_name.split('.')[1:-2]
-        suffix = '.'.join(base_domain_name.split('.')[-2:])
-
-        for i, chunk in enumerate(chunks):
-            dn = '{content}.{suffix}'.format(
-                content='.'.join(chunks[i:]),
-                suffix=suffix
-            )
-            q_filters |= Q(name__exact=dn)
-
-        matching_domains = Domain.objects.filter(q_filters)
-        matching_domains = sorted(
-            matching_domains, key=lambda domain: len(domain.name), reverse=True
-        )
         if not matching_domains:
             if self.domain.auto_ptr == AutoPtrOptions.ALWAYS:
                 domain, created = Domain.objects.get_or_create(
